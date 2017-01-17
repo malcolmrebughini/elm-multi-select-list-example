@@ -247,14 +247,14 @@ renderIncludeNoneUnknown { includeNoneUnknown } =
 
 
 indeterminate : Bool -> Attribute msg
-indeterminate isIntermediate =
-    property "indeterminate" (Encode.bool isIntermediate)
+indeterminate isIndeterminate =
+    property "indeterminate" (Encode.bool isIndeterminate)
 
 
 view : Model -> Html Msg
 view model =
     let
-        isIntermediate =
+        isIndeterminate =
             (List.length model.selectedItems) > 0 && (List.length model.selectedItems) < (List.length model.items)
 
         noneUnknown =
@@ -277,7 +277,7 @@ view model =
                 ]
             , div []
                 [ label [ class [ Css.Header ] ]
-                    [ input [ type_ "checkbox", onClick SelectAll, checked model.allSelected, indeterminate isIntermediate ] []
+                    [ input [ type_ "checkbox", onClick SelectAll, checked model.allSelected, indeterminate isIndeterminate ] []
                     , text ""
                     ]
                 , renderItemsList model
