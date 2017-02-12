@@ -7,9 +7,11 @@ import Json.Decode as Json
 
 
 type alias Pos =
-    { scrolledHeight : Int
-    , contentHeight : Int
-    , containerHeight : Int
+    { scrolledHeight :
+        Int
+    , contentHeight :
+        Int
+        --    , containerHeight : Int
     }
 
 
@@ -20,10 +22,13 @@ onScroll tagger =
 
 decodeScrollPosition : Json.Decoder Pos
 decodeScrollPosition =
-    Json.map3 Pos
+    Json.map2 Pos
         scrollTop
         scrollHeight
-        (maxInt offsetHeight clientHeight)
+
+
+
+--        (maxInt offsetHeight clientHeight)
 
 
 scrollTop : Json.Decoder Int

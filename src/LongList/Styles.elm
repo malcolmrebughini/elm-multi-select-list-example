@@ -41,6 +41,7 @@ css =
             , color (hex "888888")
             , cursor pointer
             , width (pct 100)
+            , height (px 20)
             , displayFlex
             , alignItems center
             , hover

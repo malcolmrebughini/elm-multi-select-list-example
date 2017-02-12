@@ -1,26 +1,37 @@
 port module LongList exposing (..)
 
 import Html exposing (..)
-import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, property)
+import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, property, style)
 import Html.Events exposing (..)
-import List.Extra exposing (elemIndex, remove)
+import List.Extra exposing (elemIndex, remove, groupsOf)
 import Regex
 import Json.Encode as Encode
-import Platform.Sub exposing (Sub)
-import Html.Keyed as Keyed
 import LongList.ScrollUtils as ScrollUtils
 import LongList.Styles as Css
 import Html.CssHelpers
+import Css exposing (px, height)
+import LongList.ScrollUtils exposing (..)
+import Debouncer
+import Time
+import Array.Hamt as Array
+import Array.Extra
+import Lazy exposing (Lazy)
 
 
 { id, class, classList } =
     Html.CssHelpers.withNamespace "long-list"
 
 
+styles : List Css.Mixin -> Attribute msg
+styles =
+    Css.asPairs >> style
+
+
 type alias Model =
-    { items : List Item
+    { items : Lazy (Array.Array Item)
+    , displayedItems : Array.Array Item
     , filterBy : String
-    , selectedItems : List Item
+    , selectedItems : Array.Array Item
     , dropDownIsOpen : Bool
     , selectedFilter : Filter
     , hasNoneCheckbox : Bool
@@ -40,6 +51,8 @@ type alias Flags =
     , selectedOptions : List Item
     , hasNoneCheckbox : Bool
     , includeNoneUnknown : Bool
+    , containerHeight : Int
+    , elementHeight : Int
     }
 
 
@@ -62,14 +75,14 @@ type Msg
     | SelectFilter Filter
     | ReturnItems Bool
     | ToggleIncludeNoneUnknown
-    | Scroll ScrollUtils.Pos
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    ( { items = flags.options
+    ( { items = Lazy.lazy (\_ -> Array.fromList (flags.options))
+      , displayedItems = Array.slice 0 200 (Array.fromList flags.options)
       , filterBy = ""
-      , selectedItems = flags.selectedOptions
+      , selectedItems = Array.fromList flags.selectedOptions
       , dropDownIsOpen = False
       , selectedFilter = BeginsWith
       , hasNoneCheckbox = flags.hasNoneCheckbox
@@ -89,30 +102,20 @@ update msg model =
         Select item ->
             let
                 newSelectedItems =
-                    if (elemIndex item model.selectedItems) /= Nothing then
-                        remove item model.selectedItems
+                    if isSelected item model.selectedItems then
+                        Array.filter (\i -> i /= item) model.selectedItems
                     else
-                        List.append [ item ] model.selectedItems
+                        Array.push item model.selectedItems
             in
                 ( { model | selectedItems = newSelectedItems }, Cmd.none )
 
         SelectAll ->
-            let
-                newSelectedItems =
-                    if (List.length model.items) == (List.length model.selectedItems) then
-                        []
-                    else
-                        model.items
-
-                allSelected =
-                    not <| (List.length model.items) == (List.length model.selectedItems)
-            in
-                ( { model
-                    | selectedItems = newSelectedItems
-                    , allSelected = allSelected
-                  }
-                , Cmd.none
-                )
+            ( { model
+                | selectedItems = Array.empty
+                , allSelected = not model.allSelected
+              }
+            , Cmd.none
+            )
 
         ToggleDropDown ->
             ( { model | dropDownIsOpen = not model.dropDownIsOpen }, Cmd.none )
@@ -126,17 +129,10 @@ update msg model =
             )
 
         ReturnItems bool ->
-            ( model, getValuesReturn { values = model.selectedItems, includeNoneUnknown = model.includeNoneUnknown } )
+            ( model, getValuesReturn { values = Array.toList model.selectedItems, includeNoneUnknown = model.includeNoneUnknown } )
 
         ToggleIncludeNoneUnknown ->
             ( { model | includeNoneUnknown = not model.includeNoneUnknown }, Cmd.none )
-
-        Scroll pos ->
-            let
-                a =
-                    Debug.log "A" pos
-            in
-                ( model, Cmd.none )
 
 
 renderDropDownButton : Model -> Html Msg
@@ -176,13 +172,13 @@ renderDropDownButton { dropDownIsOpen, selectedFilter } =
             ]
 
 
-isSelected : Item -> List Item -> Bool
+isSelected : Item -> Array.Array Item -> Bool
 isSelected item selectedItems =
     let
-        index =
-            elemIndex item selectedItems
+        filtered =
+            Array.filter (\i -> i == item) selectedItems
     in
-        index /= Nothing
+        filtered /= Array.empty
 
 
 renderItem : Item -> Bool -> Html Msg
@@ -211,22 +207,31 @@ getFilter selectedFilter filterBy string =
 
 
 renderItemsList : Model -> Html Msg
-renderItemsList { items, selectedItems, selectedFilter, filterBy, allSelected } =
+renderItemsList { items, displayedItems, selectedItems, selectedFilter, filterBy, allSelected, containerHeight, elementHeight, scrolled } =
     let
         filter =
             getFilter selectedFilter
     in
-        Keyed.node "div"
-            [ class [ Css.ListContainer ] ]
-            (List.filterMap
-                (\item ->
-                    if filterBy == "" || filter filterBy item.name then
-                        Just ( item.name, renderItem item (allSelected || (isSelected item selectedItems)) )
-                    else
-                        Nothing
+        div
+            [ class [ Css.ListContainer ], styles [ height (px (toFloat containerHeight)) ] ]
+            --            [ class [ Css.ListContainer ], styles [ height (px (toFloat containerHeight)) ], onScroll Scroll ]
+            --            [ div [ styles [ height (px (toFloat ((Array.length (Lazy.force items)) * elementHeight))) ] ]
+            [ div [ styles [ height (px (toFloat (6500 * elementHeight))) ] ]
+                (List.append
+                    [ div [ styles [ height (px (toFloat scrolled)) ] ] [] ]
+                    --                    [ div [] [] ]
+                    (List.filterMap
+                        (\item ->
+                            if filterBy == "" || filter filterBy item.name then
+                                --                        if item.id == 1 then
+                                Just (renderItem item (allSelected || (isSelected item selectedItems)))
+                            else
+                                Nothing
+                        )
+                        (Array.toList displayedItems)
+                    )
                 )
-                items
-            )
+            ]
 
 
 renderListInfo : Int -> Int -> Html Msg
@@ -255,7 +260,7 @@ view : Model -> Html Msg
 view model =
     let
         isIndeterminate =
-            (List.length model.selectedItems) > 0 && (List.length model.selectedItems) < (List.length model.items)
+            (Array.length model.selectedItems) > 0 && (Array.length model.selectedItems) < (Array.length (Lazy.force model.items))
 
         noneUnknown =
             if model.hasNoneCheckbox then
@@ -282,7 +287,8 @@ view model =
                     ]
                 , renderItemsList model
                 ]
-            , renderListInfo (List.length model.selectedItems) (List.length model.items)
+              --            , renderListInfo (Array.length model.selectedItems) (Array.length (Lazy.force model.items))
+            , renderListInfo (Array.length model.selectedItems) 6500
             , noneUnknown
             ]
 
