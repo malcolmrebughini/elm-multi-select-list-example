@@ -67,7 +67,7 @@ type Filter
 type Msg
     = InputFilter String
     | Select Item
-    | SelectAll
+    | SelectAll Bool
     | ToggleDropDown
     | SelectFilter Filter
     | ReturnItems Bool
@@ -123,14 +123,14 @@ update msg model =
                     if isSelected item model.selectedItems then
                         List.filter (\i -> i /= item) model.selectedItems
                     else
-                        List.append [ item ] model.selectedItems
+                        List.append model.selectedItems [ item ]
             in
                 ( { model | selectedItems = newSelectedItems }, Cmd.none )
 
-        SelectAll ->
+        SelectAll bool ->
             ( { model
                 | selectedItems = []
-                , allSelected = not model.allSelected
+                , allSelected = not bool
               }
             , Cmd.none
             )
@@ -147,7 +147,16 @@ update msg model =
             )
 
         ReturnItems bool ->
-            ( model, getValuesReturn { values = model.selectedItems, includeNoneUnknown = model.includeNoneUnknown } )
+            let
+                values =
+                    if model.allSelected then
+                        List.filter
+                            (\i -> isSelected i model.selectedItems |> not)
+                            model.items
+                    else
+                        model.selectedItems
+            in
+                ( model, getValuesReturn { values = values, includeNoneUnknown = model.includeNoneUnknown } )
 
         ToggleIncludeNoneUnknown ->
             ( { model | includeNoneUnknown = not model.includeNoneUnknown }, Cmd.none )
@@ -226,6 +235,14 @@ isSelected item selectedItems =
         filtered /= Nothing
 
 
+isChecked : Bool -> Bool -> Bool
+isChecked allSelected isSelected =
+    if allSelected then
+        not isSelected
+    else
+        isSelected
+
+
 renderItem : Item -> Bool -> Html Msg
 renderItem item isSelected =
     label
@@ -258,7 +275,13 @@ renderItemsList { rv, items, displayedItems, displayedItemsCount, selectedItems,
             RV.getRenderableElements rv displayedItems
 
         renderedRows =
-            List.map (\item -> renderItem item (allSelected || (isSelected item selectedItems))) renderableRows
+            List.map
+                (\item ->
+                    isSelected item selectedItems
+                        |> isChecked allSelected
+                        |> renderItem item
+                )
+                renderableRows
     in
         div
             [ class [ Css.ListContainer ] ]
@@ -303,6 +326,18 @@ view model =
                 renderIncludeNoneUnknown model
             else
                 text ""
+
+        allCheckbox =
+            if model.allSelected then
+                model.allSelected && List.length model.items > List.length model.selectedItems
+            else
+                List.length model.items == List.length model.selectedItems
+
+        selectedItemsCount =
+            if model.allSelected then
+                List.length model.items - List.length model.selectedItems
+            else
+                List.length model.selectedItems
     in
         div [ class [ Css.Container ] ]
             [ div [ class [ Css.ListFilter ] ]
@@ -318,12 +353,18 @@ view model =
                 ]
             , div []
                 [ label [ class [ Css.Header ] ]
-                    [ input [ type_ "checkbox", onClick SelectAll, checked model.allSelected, indeterminate isIndeterminate ] []
+                    [ input
+                        [ type_ "checkbox"
+                        , onClick <| SelectAll allCheckbox
+                        , checked allCheckbox
+                        , indeterminate isIndeterminate
+                        ]
+                        []
                     , text ""
                     ]
                 , renderItemsList model
                 ]
-            , renderListInfo (List.length model.selectedItems) 6500
+            , renderListInfo selectedItemsCount 6500
             , noneUnknown
             ]
 

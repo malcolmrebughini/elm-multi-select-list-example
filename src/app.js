@@ -4,7 +4,6 @@ import Elm from './LongList/Main.elm';
 const options = new Array(6500)
   .fill('Test Value')
   .map((v, i) => ({ id: i, name: `${v} ${i}` }));
-  // .map((v, i) => i);
 
 const app = Elm.LongList.fullscreen({
   options,
