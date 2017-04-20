@@ -3,19 +3,14 @@ port module LongList exposing (..)
 import Html exposing (..)
 import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, property, style)
 import Html.Events exposing (..)
-import List.Extra exposing (elemIndex, remove, groupsOf)
 import Regex
 import Json.Encode as Encode
-import LongList.ScrollUtils as ScrollUtils
 import LongList.Styles as Css
 import Html.CssHelpers
 import Css exposing (px, height)
-import LongList.ScrollUtils exposing (..)
-import Debouncer
-import Time
-import Array.Hamt as Array
-import Array.Extra
-import Lazy exposing (Lazy)
+import LongList.RowVirtualization as RV
+import List.Extra as ListExtra
+import Task
 
 
 { id, class, classList } =
@@ -28,15 +23,17 @@ styles =
 
 
 type alias Model =
-    { items : Lazy (Array.Array Item)
-    , displayedItems : Array.Array Item
+    { items : List Item
+    , displayedItems : List Item
+    , displayedItemsCount : Int
     , filterBy : String
-    , selectedItems : Array.Array Item
+    , selectedItems : List Item
     , dropDownIsOpen : Bool
     , selectedFilter : Filter
     , hasNoneCheckbox : Bool
     , includeNoneUnknown : Bool
     , allSelected : Bool
+    , rv : RV.Model
     }
 
 
@@ -68,26 +65,30 @@ type Filter
 
 
 type Msg
-    = Input String
+    = InputFilter String
     | Select Item
     | SelectAll
     | ToggleDropDown
     | SelectFilter Filter
     | ReturnItems Bool
     | ToggleIncludeNoneUnknown
+    | Scroll RV.Pos
+    | NoOp
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    ( { items = Lazy.lazy (\_ -> Array.fromList (flags.options))
-      , displayedItems = Array.slice 0 200 (Array.fromList flags.options)
+    ( { items = flags.options
+      , displayedItems = flags.options
+      , displayedItemsCount = List.length flags.options
+      , selectedItems = flags.selectedOptions
       , filterBy = ""
-      , selectedItems = Array.fromList flags.selectedOptions
-      , dropDownIsOpen = False
       , selectedFilter = BeginsWith
+      , dropDownIsOpen = False
       , hasNoneCheckbox = flags.hasNoneCheckbox
       , includeNoneUnknown = flags.includeNoneUnknown
       , allSelected = False
+      , rv = RV.init flags.containerHeight flags.elementHeight
       }
     , Cmd.none
     )
@@ -96,22 +97,39 @@ init flags =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Input text ->
-            ( { model | filterBy = text }, Cmd.none )
+        InputFilter text ->
+            let
+                ( rvModel, rvCmd ) =
+                    RV.resetPosition NoOp model.rv
+
+                displayedItems =
+                    filterItems model.selectedFilter text model.items
+
+                displayedItemsCount =
+                    List.length displayedItems
+            in
+                ( { model
+                    | filterBy = text
+                    , rv = rvModel
+                    , displayedItems = displayedItems
+                    , displayedItemsCount = displayedItemsCount
+                  }
+                , rvCmd
+                )
 
         Select item ->
             let
                 newSelectedItems =
                     if isSelected item model.selectedItems then
-                        Array.filter (\i -> i /= item) model.selectedItems
+                        List.filter (\i -> i /= item) model.selectedItems
                     else
-                        Array.push item model.selectedItems
+                        List.append [ item ] model.selectedItems
             in
                 ( { model | selectedItems = newSelectedItems }, Cmd.none )
 
         SelectAll ->
             ( { model
-                | selectedItems = Array.empty
+                | selectedItems = []
                 , allSelected = not model.allSelected
               }
             , Cmd.none
@@ -125,14 +143,41 @@ update msg model =
                 | selectedFilter = filter
                 , dropDownIsOpen = False
               }
-            , Cmd.none
+            , cmdFromMsg (InputFilter model.filterBy)
             )
 
         ReturnItems bool ->
-            ( model, getValuesReturn { values = Array.toList model.selectedItems, includeNoneUnknown = model.includeNoneUnknown } )
+            ( model, getValuesReturn { values = model.selectedItems, includeNoneUnknown = model.includeNoneUnknown } )
 
         ToggleIncludeNoneUnknown ->
             ( { model | includeNoneUnknown = not model.includeNoneUnknown }, Cmd.none )
+
+        Scroll pos ->
+            ( { model | rv = RV.update model.rv pos }, Cmd.none )
+
+        NoOp ->
+            ( model, Cmd.none )
+
+
+cmdFromMsg : msg -> Cmd msg
+cmdFromMsg msg =
+    Task.perform identity (Task.succeed msg)
+
+
+filterItems : Filter -> String -> List Item -> List Item
+filterItems selectedFilter filterBy items =
+    let
+        filter =
+            getFilter selectedFilter
+    in
+        List.filterMap
+            (\item ->
+                if filterBy == "" || filter filterBy item.name then
+                    Just item
+                else
+                    Nothing
+            )
+            items
 
 
 renderDropDownButton : Model -> Html Msg
@@ -172,13 +217,13 @@ renderDropDownButton { dropDownIsOpen, selectedFilter } =
             ]
 
 
-isSelected : Item -> Array.Array Item -> Bool
+isSelected : Item -> List Item -> Bool
 isSelected item selectedItems =
     let
         filtered =
-            Array.filter (\i -> i == item) selectedItems
+            ListExtra.find (\i -> i == item) selectedItems
     in
-        filtered /= Array.empty
+        filtered /= Nothing
 
 
 renderItem : Item -> Bool -> Html Msg
@@ -207,30 +252,21 @@ getFilter selectedFilter filterBy string =
 
 
 renderItemsList : Model -> Html Msg
-renderItemsList { items, displayedItems, selectedItems, selectedFilter, filterBy, allSelected, containerHeight, elementHeight, scrolled } =
+renderItemsList { rv, items, displayedItems, displayedItemsCount, selectedItems, selectedFilter, filterBy, allSelected } =
     let
-        filter =
-            getFilter selectedFilter
+        renderableRows =
+            RV.getRenderableElements rv displayedItems
+
+        renderedRows =
+            List.map (\item -> renderItem item (allSelected || (isSelected item selectedItems))) renderableRows
     in
         div
-            [ class [ Css.ListContainer ], styles [ height (px (toFloat containerHeight)) ] ]
-            --            [ class [ Css.ListContainer ], styles [ height (px (toFloat containerHeight)) ], onScroll Scroll ]
-            --            [ div [ styles [ height (px (toFloat ((Array.length (Lazy.force items)) * elementHeight))) ] ]
-            [ div [ styles [ height (px (toFloat (6500 * elementHeight))) ] ]
-                (List.append
-                    [ div [ styles [ height (px (toFloat scrolled)) ] ] [] ]
-                    --                    [ div [] [] ]
-                    (List.filterMap
-                        (\item ->
-                            if filterBy == "" || filter filterBy item.name then
-                                --                        if item.id == 1 then
-                                Just (renderItem item (allSelected || (isSelected item selectedItems)))
-                            else
-                                Nothing
-                        )
-                        (Array.toList displayedItems)
-                    )
-                )
+            [ class [ Css.ListContainer ] ]
+            [ RV.scrollableContainer
+                rv
+                displayedItemsCount
+                [ RV.onScroll Scroll ]
+                renderedRows
             ]
 
 
@@ -260,7 +296,7 @@ view : Model -> Html Msg
 view model =
     let
         isIndeterminate =
-            (Array.length model.selectedItems) > 0 && (Array.length model.selectedItems) < (Array.length (Lazy.force model.items))
+            (List.length model.selectedItems) > 0 && (List.length model.selectedItems) < (List.length model.items)
 
         noneUnknown =
             if model.hasNoneCheckbox then
@@ -273,7 +309,7 @@ view model =
                 [ input
                     [ type_ "text"
                     , class [ Css.FilterInput ]
-                    , onInput Input
+                    , onInput InputFilter
                     , value model.filterBy
                     , placeholder "Type to filter"
                     ]
@@ -287,8 +323,7 @@ view model =
                     ]
                 , renderItemsList model
                 ]
-              --            , renderListInfo (Array.length model.selectedItems) (Array.length (Lazy.force model.items))
-            , renderListInfo (Array.length model.selectedItems) 6500
+            , renderListInfo (List.length model.selectedItems) 6500
             , noneUnknown
             ]
 

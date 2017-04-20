@@ -4,14 +4,16 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on)
 import Json.Decode as Json
-import Debouncer
+import Dom.Scroll exposing (toTop)
+import Task
 
 
 type alias Model =
     { containerHeight : Int
     , elementHeight : Int
-    , scrolled : Int
-    , debouncer : Debouncer.DebouncerState
+    , displayIndexStart : Int
+    , displayIndexEnd : Int
+    , apertureTop : Int
     }
 
 
@@ -23,17 +25,15 @@ type alias Pos =
 
 type Msg
     = Scroll Pos
-    | DebounceScroll Pos
-    | DebouncerMsg (Debouncer.SelfMsg Msg)
 
 
-init : Int -> Int -> Int -> Model
-init containerHeight elementHeight itemsCount =
+init : Int -> Int -> Model
+init containerHeight elementHeight =
     { containerHeight = containerHeight
     , elementHeight = elementHeight
-    , itemsCount = itemsCount
-    , scrolled = 0
-    , debouncer = Debouncer.create (50 * Time.millisecond)
+    , displayIndexStart = 0
+    , displayIndexEnd = 200
+    , apertureTop = 0
     }
 
 
@@ -59,73 +59,94 @@ scrollHeight =
     Json.at [ "target", "scrollHeight" ] Json.int
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        DebounceScroll pos ->
-            let
-                ( debouncer, debouncerCmd ) =
-                    model.debouncer |> Debouncer.bounce { id = "scroll", msgToSend = (Scroll pos) }
-            in
-                { model
-                    | debouncer = debouncer
-                }
-                    ! [ debouncerCmd |> Cmd.map DebouncerMsg ]
+update : Model -> Pos -> Model
+update model pos =
+    let
+        -- After how many pixels scrolled the list, the start and end indexes should be updated
+        blockSize =
+            model.elementHeight * 50
 
-        DebouncerMsg debouncerMsg ->
-            let
-                ( debouncer, cmd ) =
-                    model.debouncer |> Debouncer.process debouncerMsg
-            in
-                { model | debouncer = debouncer } ! [ cmd ]
+        -- What blockNumber is displayed currently
+        blockNumber =
+            pos.scrolledHeight // blockSize
 
-        Scroll pos ->
-            let
-                batchSize =
-                    2000
+        -- Pixel the block starts
+        blockStart =
+            blockSize * blockNumber
 
-                blockNumber =
-                    floor (toFloat (pos.scrolledHeight) / batchSize)
+        -- Pixel the current block ends
+        blockEnd =
+            blockStart + blockSize
 
-                blockStart =
-                    batchSize * blockNumber
+        -- Pixel the blocks should be rendered at
+        apertureTop =
+            Basics.max 0 (blockStart - blockSize)
 
-                blockEnd =
-                    blockStart + batchSize
+        -- Pixel the blocks should be rendered until
+        apertureBottom =
+            Basics.min pos.contentHeight (blockEnd + blockSize)
 
-                apertureTop =
-                    Debug.log "apertureTop" (max 0 (blockStart - (model.elementHeight * 100)))
+        -- Start index to slice
+        displayIndexStart =
+            apertureTop // model.elementHeight
 
-                apertureBottom =
-                    Debug.log "apertureBottom" (min pos.contentHeight (blockEnd + (model.elementHeight * 100)))
-
-                displayIndexStart =
-                    Debug.log "start" (max 0 (floor <| (toFloat apertureTop) / (toFloat model.elementHeight)))
-
-                displayIndexEnd =
-                    Debug.log "end" (ceiling <| ((toFloat apertureBottom) / (toFloat model.elementHeight)))
-
-                displayedItems =
-                    Array.slice displayIndexStart displayIndexEnd (Lazy.force model.items)
-            in
-                ( { model | scrolled = apertureTop, displayedItems = displayedItems }, Cmd.none )
+        -- End index to slice
+        displayIndexEnd =
+            apertureBottom // model.elementHeight
+    in
+        { model
+            | apertureTop = apertureTop
+            , displayIndexStart = displayIndexStart
+            , displayIndexEnd = displayIndexEnd
+        }
 
 
-view : Model -> List a -> Html Msg
-view model rows =
+getRenderableElements : Model -> List a -> List a
+getRenderableElements { displayIndexStart, displayIndexEnd } items =
+    List.filterMap (\item -> item) <|
+        List.indexedMap
+            (\index item ->
+                if displayIndexStart <= index && index < displayIndexEnd then
+                    Just item
+                else
+                    Nothing
+            )
+            items
+
+
+resetPosition : msg -> Model -> ( Model, Cmd msg )
+resetPosition noOp model =
+    ( { model | apertureTop = 0 }
+    , Task.attempt (always noOp) <| toTop "rowVirtualizationContainer"
+    )
+
+
+scrollableContainer : Model -> Int -> List (Html.Attribute a) -> List (Html a) -> Html a
+scrollableContainer model itemsCount attributes children =
     div
-        [ style
-            [ ( "width", "auto" )
-            , ( "height", toString model.containerHeight ++ "px" )
-            , ( "border", "1px solid black" )
-            , ( "overflow-y", "scroll" )
+        (List.append
+            attributes
+            [ style
+                [ ( "width", "auto" )
+                , ( "height", toString model.containerHeight ++ "px" )
+                , ( "overflow-y", "scroll" )
+                ]
+            , id "rowVirtualizationContainer"
             ]
-        , onScroll Scroll
-        ]
+        )
         [ div
             [ style
-                [ ( "height", (toString (model.elementHeight * List.length <| rows)) ++ "px" )
+                [ ( "height", toString ((itemsCount * model.elementHeight) - model.apertureTop) ++ "px" )
+                , ( "padding-top", toString model.apertureTop ++ "px" )
                 ]
             ]
-            rows
+            (List.append
+                [ div
+                    [ style
+                        []
+                    ]
+                    []
+                ]
+                children
+            )
         ]

@@ -32,7 +32,7 @@ css =
             ]
         , (.) ListContainer
             [ maxHeight (vh 50)
-            , overflowY scroll
+            , overflow hidden
             , border3 (px 1) solid (hex "d8d8d8")
             ]
         , (.) Item
