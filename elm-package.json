@@ -1,7 +1,7 @@
 {
     "version": "0.1.0",
     "summary": "Elm LongList",
-    "repository": "https://github.com/user/project.git",
+    "repository": "https://github.com/malcolmrebughini/elm-multi-select-list-example.git",
     "license": "BSD3",
     "source-directories": [
         "./src"
