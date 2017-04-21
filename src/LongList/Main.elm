@@ -1,16 +1,14 @@
 port module LongList exposing (..)
 
 import Html exposing (..)
-import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, property, style)
+import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, style)
 import Html.Events exposing (..)
 import Regex
-import Json.Encode as Encode
 import LongList.Styles as Css
 import Html.CssHelpers
 import Css exposing (px, height)
 import LongList.RowVirtualization as RV
-import List.Extra as ListExtra
-import Task
+import LongList.Utils as Utils
 
 
 { id, class, classList } =
@@ -120,7 +118,7 @@ update msg model =
         Select item ->
             let
                 newSelectedItems =
-                    if isSelected item model.selectedItems then
+                    if Utils.isIncluded item model.selectedItems then
                         List.filter (\i -> i /= item) model.selectedItems
                     else
                         List.append model.selectedItems [ item ]
@@ -143,7 +141,7 @@ update msg model =
                 | selectedFilter = filter
                 , dropDownIsOpen = False
               }
-            , cmdFromMsg <| InputFilter model.filterBy
+            , Utils.cmdFromMsg <| InputFilter model.filterBy
             )
 
         ReturnItems bool ->
@@ -151,7 +149,7 @@ update msg model =
                 values =
                     if model.allSelected then
                         List.filter
-                            (\i -> isSelected i model.selectedItems |> not)
+                            (\i -> Utils.isIncluded i model.selectedItems |> not)
                             model.items
                     else
                         model.selectedItems
@@ -166,11 +164,6 @@ update msg model =
 
         NoOp ->
             ( model, Cmd.none )
-
-
-cmdFromMsg : msg -> Cmd msg
-cmdFromMsg msg =
-    Task.perform identity (Task.succeed msg)
 
 
 filterItems : Filter -> String -> List Item -> List Item
@@ -226,15 +219,6 @@ renderDropDownButton { dropDownIsOpen, selectedFilter } =
             ]
 
 
-isSelected : Item -> List Item -> Bool
-isSelected item selectedItems =
-    let
-        filtered =
-            ListExtra.find (\i -> i == item) selectedItems
-    in
-        filtered /= Nothing
-
-
 isChecked : Bool -> Bool -> Bool
 isChecked allSelected isSelected =
     if allSelected then
@@ -278,7 +262,7 @@ renderItemsList { rv, items, displayedItems, displayedItemsCount, selectedItems,
             renderableRows
                 |> List.map
                     (\item ->
-                        isSelected item selectedItems
+                        Utils.isIncluded item selectedItems
                             |> isChecked allSelected
                             |> renderItem item
                     )
@@ -308,11 +292,6 @@ renderIncludeNoneUnknown { includeNoneUnknown } =
         [ input [ type_ "checkbox", onClick ToggleIncludeNoneUnknown, checked includeNoneUnknown ] []
         , text "Include None/Unknown"
         ]
-
-
-indeterminate : Bool -> Attribute msg
-indeterminate isIndeterminate =
-    property "indeterminate" <| Encode.bool isIndeterminate
 
 
 view : Model -> Html Msg
@@ -357,7 +336,7 @@ view model =
                         [ type_ "checkbox"
                         , onClick <| SelectAll allCheckbox
                         , checked allCheckbox
-                        , indeterminate isIndeterminate
+                        , Utils.indeterminate isIndeterminate
                         ]
                         []
                     , text ""
