@@ -39,7 +39,7 @@ init containerHeight elementHeight =
 
 onScroll : (Pos -> action) -> Attribute action
 onScroll tagger =
-    on "scroll" (Json.map tagger decodeScrollPosition)
+    on "scroll" <| Json.map tagger decodeScrollPosition
 
 
 decodeScrollPosition : Json.Decoder Pos
@@ -103,15 +103,15 @@ update model pos =
 
 getRenderableElements : Model -> List a -> List a
 getRenderableElements { displayIndexStart, displayIndexEnd } items =
-    List.filterMap (\item -> item) <|
-        List.indexedMap
+    items
+        |> List.indexedMap
             (\index item ->
                 if displayIndexStart <= index && index < displayIndexEnd then
                     Just item
                 else
                     Nothing
             )
-            items
+        |> List.filterMap (\item -> item)
 
 
 resetPosition : msg -> Model -> ( Model, Cmd msg )

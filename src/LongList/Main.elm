@@ -143,7 +143,7 @@ update msg model =
                 | selectedFilter = filter
                 , dropDownIsOpen = False
               }
-            , cmdFromMsg (InputFilter model.filterBy)
+            , cmdFromMsg <| InputFilter model.filterBy
             )
 
         ReturnItems bool ->
@@ -179,14 +179,14 @@ filterItems selectedFilter filterBy items =
         filter =
             getFilter selectedFilter
     in
-        List.filterMap
-            (\item ->
-                if filterBy == "" || filter filterBy item.name then
-                    Just item
-                else
-                    Nothing
-            )
-            items
+        items
+            |> List.filterMap
+                (\item ->
+                    if filterBy == "" || filter filterBy item.name then
+                        Just item
+                    else
+                        Nothing
+                )
 
 
 renderDropDownButton : Model -> Html Msg
@@ -275,13 +275,13 @@ renderItemsList { rv, items, displayedItems, displayedItemsCount, selectedItems,
             RV.getRenderableElements rv displayedItems
 
         renderedRows =
-            List.map
-                (\item ->
-                    isSelected item selectedItems
-                        |> isChecked allSelected
-                        |> renderItem item
-                )
-                renderableRows
+            renderableRows
+                |> List.map
+                    (\item ->
+                        isSelected item selectedItems
+                            |> isChecked allSelected
+                            |> renderItem item
+                    )
     in
         div
             [ class [ Css.ListContainer ] ]
@@ -305,14 +305,14 @@ renderIncludeNoneUnknown : Model -> Html Msg
 renderIncludeNoneUnknown { includeNoneUnknown } =
     label
         [ class [ Css.ListOptions ] ]
-        [ input [ type_ "checkbox", onClick (ToggleIncludeNoneUnknown), checked includeNoneUnknown ] []
+        [ input [ type_ "checkbox", onClick ToggleIncludeNoneUnknown, checked includeNoneUnknown ] []
         , text "Include None/Unknown"
         ]
 
 
 indeterminate : Bool -> Attribute msg
 indeterminate isIndeterminate =
-    property "indeterminate" (Encode.bool isIndeterminate)
+    property "indeterminate" <| Encode.bool isIndeterminate
 
 
 view : Model -> Html Msg
