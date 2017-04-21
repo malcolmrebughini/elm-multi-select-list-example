@@ -343,7 +343,7 @@ view model =
                     ]
                 , renderItemsList model
                 ]
-            , renderListInfo selectedItemsCount 6500
+            , renderListInfo selectedItemsCount (List.length model.items)
             , noneUnknown
             ]
 
