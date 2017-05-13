@@ -1,4 +1,4 @@
-module LongList.Styles exposing (..)
+module LongList.LStyles exposing (..)
 
 import Css exposing (..)
 import Css.Elements exposing (..)

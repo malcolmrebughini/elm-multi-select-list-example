@@ -4,7 +4,8 @@
     "repository": "https://github.com/malcolmrebughini/elm-multi-select-list-example.git",
     "license": "BSD3",
     "source-directories": [
-        "./src"
+        "./src",
+        "./src/LongList"
     ],
     "exposed-modules": [],
     "dependencies": {

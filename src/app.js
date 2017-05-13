@@ -1,11 +1,11 @@
-import Elm from './LongList/Main.elm';
+import Elm from './Main.elm';
 
 
 const options = new Array(6500)
   .fill('Test Value')
   .map((v, i) => ({ id: i, name: `${v} ${i}` }));
 
-const app = Elm.LongList.fullscreen({
+const app = Elm.Main.fullscreen({
   options,
   selectedOptions: [],
   hasNoneCheckbox: false,

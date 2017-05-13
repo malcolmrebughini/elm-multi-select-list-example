@@ -1,7 +1,7 @@
 {
-  "name": "turns",
+  "name": "longlist",
   "version": "0.1.0",
-  "description": "Massage turns app",
+  "description": "List in elm",
   "main": "index.js",
   "scripts": {
     "test": "elm-test",
@@ -37,8 +37,6 @@
     "webpack-dev-server": "^1.16.1"
   },
   "dependencies": {
-    "font-awesome": "^4.7.0",
-    "material-design-lite": "^1.2.1",
-    "randomcolor": "^0.4.4"
+    "font-awesome": "^4.7.0"
   }
 }

@@ -1,10 +1,10 @@
-port module LongList exposing (..)
+module LongList exposing (..)
 
 import Html exposing (..)
 import Html.Attributes as HtmlAttributes exposing (type_, checked, placeholder, value, style)
 import Html.Events exposing (..)
 import Regex
-import LongList.Styles as Css
+import LongList.LStyles as Css
 import Html.CssHelpers
 import Css exposing (px, height)
 import LongList.RowVirtualization as RV
@@ -28,26 +28,8 @@ type alias Model =
     , selectedItems : List Item
     , dropDownIsOpen : Bool
     , selectedFilter : Filter
-    , hasNoneCheckbox : Bool
-    , includeNoneUnknown : Bool
     , allSelected : Bool
     , rv : RV.Model
-    }
-
-
-type alias ReturnValues =
-    { values : List Item
-    , includeNoneUnknown : Bool
-    }
-
-
-type alias Flags =
-    { options : List Item
-    , selectedOptions : List Item
-    , hasNoneCheckbox : Bool
-    , includeNoneUnknown : Bool
-    , containerHeight : Int
-    , elementHeight : Int
     }
 
 
@@ -68,25 +50,29 @@ type Msg
     | SelectAll Bool
     | ToggleDropDown
     | SelectFilter Filter
-    | ReturnItems Bool
-    | ToggleIncludeNoneUnknown
     | Scroll RV.Pos
     | NoOp
 
 
-init : Flags -> ( Model, Cmd Msg )
-init flags =
-    ( { items = flags.options
-      , displayedItems = flags.options
-      , displayedItemsCount = List.length flags.options
-      , selectedItems = flags.selectedOptions
+type alias Conf =
+    { items : List Item
+    , selectedItems : List Item
+    , containerHeight : Int
+    , elementHeight : Int
+    }
+
+
+init : Conf -> ( Model, Cmd Msg )
+init conf =
+    ( { items = conf.items
+      , displayedItems = conf.items
+      , displayedItemsCount = List.length conf.items
+      , selectedItems = conf.selectedItems
       , filterBy = ""
       , selectedFilter = BeginsWith
       , dropDownIsOpen = False
-      , hasNoneCheckbox = flags.hasNoneCheckbox
-      , includeNoneUnknown = flags.includeNoneUnknown
       , allSelected = False
-      , rv = RV.init flags.containerHeight flags.elementHeight
+      , rv = RV.init conf.containerHeight conf.elementHeight
       }
     , Cmd.none
     )
@@ -144,26 +130,21 @@ update msg model =
             , Utils.cmdFromMsg <| InputFilter model.filterBy
             )
 
-        ReturnItems bool ->
-            let
-                values =
-                    if model.allSelected then
-                        List.filter
-                            (\i -> Utils.isIncluded i model.selectedItems |> not)
-                            model.items
-                    else
-                        model.selectedItems
-            in
-                ( model, getValuesReturn { values = values, includeNoneUnknown = model.includeNoneUnknown } )
-
-        ToggleIncludeNoneUnknown ->
-            ( { model | includeNoneUnknown = not model.includeNoneUnknown }, Cmd.none )
-
         Scroll pos ->
             ( { model | rv = RV.update model.rv pos }, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
+
+
+getSelectedValues : Model -> List Item
+getSelectedValues model =
+    if model.allSelected then
+        List.filter
+            (\i -> Utils.isIncluded i model.selectedItems |> not)
+            model.items
+    else
+        model.selectedItems
 
 
 filterItems : Filter -> String -> List Item -> List Item
@@ -285,26 +266,11 @@ renderListInfo selectedCount totalCount =
         ]
 
 
-renderIncludeNoneUnknown : Model -> Html Msg
-renderIncludeNoneUnknown { includeNoneUnknown } =
-    label
-        [ class [ Css.ListOptions ] ]
-        [ input [ type_ "checkbox", onClick ToggleIncludeNoneUnknown, checked includeNoneUnknown ] []
-        , text "Include None/Unknown"
-        ]
-
-
 view : Model -> Html Msg
 view model =
     let
         isIndeterminate =
             (List.length model.selectedItems) > 0 && (List.length model.selectedItems) < (List.length model.items)
-
-        noneUnknown =
-            if model.hasNoneCheckbox then
-                renderIncludeNoneUnknown model
-            else
-                text ""
 
         allCheckbox =
             if model.allSelected then
@@ -344,26 +310,4 @@ view model =
                 , renderItemsList model
                 ]
             , renderListInfo selectedItemsCount (List.length model.items)
-            , noneUnknown
             ]
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    getValues ReturnItems
-
-
-main : Program Flags Model Msg
-main =
-    Html.programWithFlags
-        { init = init
-        , update = update
-        , view = view
-        , subscriptions = subscriptions
-        }
-
-
-port getValues : (Bool -> msg) -> Sub msg
-
-
-port getValuesReturn : ReturnValues -> Cmd msg
