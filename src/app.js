@@ -1,7 +1,7 @@
 import Elm from './Main.elm';
 
 
-const options = new Array(6500)
+const options = new Array(100000)
   .fill('Test Value')
   .map((v, i) => ({ id: i, name: `${v} ${i}` }));
 
